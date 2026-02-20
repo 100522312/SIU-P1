@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Juego de Inclinación</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: white;
+            font-family: sans-serif;
+        }
+
+        #game-board {
+            position: relative;
+            width: 300px;
+            height: 400px;
+            background-color: #ecf0f1;
+            border: 5px solid #bdc3c7;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        /* Nuestra "canica" que se moverá */
+        #ball {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: #e74c3c;
+            border-radius: 50%;
+            /* Empezamos en el centro superior */
+            top: 20px;
+            left: 135px; 
+            /* La transformación la manejaremos por JS */
+            transform: translate(0px, 0px);
+            transition: transform 0.05s linear; /* Movimiento más suave */
+        }
+
+        /* Nuestro destino (el agujero) */
+        #target {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: #27ae60;
+            border-radius: 50%;
+            /* Posición del destino abajo del todo */
+            top: 330px;
+            left: 130px;
+        }
+
+        #start-btn {
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="start-btn">Iniciar Sensores y Jugar</button>
+
+    <div id="game-board">
+        <div id="target"></div>
+        <div id="ball"></div>
+    </div>
+
+    <script>
+        const ball = document.getElementById('ball');
+        const target = document.getElementById('target');
+        const startBtn = document.getElementById('start-btn');
+        const board = document.getElementById('game-board');
+
+        // Variables de posición de la bola
+        let ballX = 0;
+        let ballY = 0;
+        
+        // Límites del tablero (teniendo en cuenta el tamaño de la bola)
+        const maxX = board.clientWidth - 30;
+        const maxY = board.clientHeight - 30;
+
+        let gameActive = false;
+
+        // 1. Iniciar los eventos para una experiencia interactiva
+        startBtn.addEventListener('click', requestAccess);
+
+        function requestAccess() {
+            // Algunos navegadores (como Safari en iOS 13+) requieren pedir permiso explícito
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            startGame();
+                        } else {
+                            alert("Se denegó el permiso para usar los sensores.");
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Navegadores que no requieren permiso explícito (Android, PC)
+                startGame();
+            }
+        }
+
+        function startGame() {
+            startBtn.style.display = 'none'; // Ocultar el botón
+            gameActive = true;
+            
+            // 2. Manejar la API de Orientación (Acelerómetro)
+            window.addEventListener('deviceorientation', handleOrientation);
+            
+            // Iniciar el bucle de renderizado para un movimiento suave
+            requestAnimationFrame(updatePosition);
+        }
+
+        // Variables para guardar la inclinación
+        let pitch = 0; // Eje Y (Adelante/Atrás)
+        let roll = 0;  // Eje X (Izquierda/Derecha)
+
+        function handleOrientation(event) {
+            if (!gameActive) return;
+
+            // beta es el Pitch (inclinación de adelante hacia atrás, -180 a 180)
+            // gamma es el Roll (inclinación de izquierda a derecha, -90 a 90)
+            pitch = event.beta;
+            roll = event.gamma;
+        }
+
+        // 3. Aplicar transformaciones basadas en el movimiento
+        function updatePosition() {
+            if (!gameActive) return;
+
+            // Ajustamos la velocidad de movimiento dividiendo el valor del sensor
+            // Si el teléfono se inclina mucho (roll alto), sumará más a la X
+            ballX += roll * 0.15; 
+            ballY += pitch * 0.15;
+
+            // Evitar que la bola se salga de la caja
+            ballX = Math.max(0, Math.min(ballX, maxX));
+            ballY = Math.max(0, Math.min(ballY, maxY));
+
+            // Aplicamos la Transformación CSS
+            ball.style.transform = `translate(${ballX}px, ${ballY}px)`;
+
+            checkCollision();
+
+            // Volver a llamar a esta función en el próximo frame del navegador
+            requestAnimationFrame(updatePosition);
+        }
+
+        function checkCollision() {
+            // Posición real del destino (definida en CSS)
+            const targetX = 130;
+            const targetY = 330;
+
+            // Calculamos la distancia entre el centro de la bola y el centro del destino
+            // usando el teorema de Pitágoras
+            const dx = (ballX + 15) - (targetX + 20); 
+            const dy = (ballY + 15) - (targetY + 20);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Si la distancia es muy pequeña, ¡hemos llegado!
+            if (distance < 15) {
+                gameActive = false; // Detenemos el juego
+                ball.style.backgroundColor = '#2ecc71'; // Ponemos la bola verde
+                setTimeout(() => {
+                    alert("¡Objetivo alcanzado! 🎉");
+                    // Resetear el juego
+                    ballX = 0; ballY = 0;
+                    ball.style.backgroundColor = '#e74c3c';
+                    gameActive = true;
+                    requestAnimationFrame(updatePosition);
+                }, 100);
+            }
+        }
+    </script>
+</body>
+</html>
