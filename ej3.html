@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    /* user-scalable=no es crucial para evitar que el navegador haga su propio zoom nativo */
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pinch to Zoom y Rotación</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #2c3e50;
+            overflow: hidden; /* Evita que la pantalla se desplace */
+        }
+
+        #image-container {
+            width: 300px;
+            height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #my-image {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            /* El origen de la transformación será el centro de la imagen */
+            transform-origin: center center;
+            /* No usamos 'transition' aquí para que el seguimiento del dedo sea instantáneo */
+        }
+        
+        .instrucciones {
+            position: absolute;
+            top: 20px;
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="instrucciones">Usa dos dedos para hacer zoom y rotar</div>
+
+    <div id="image-container">
+        <img id="my-image" src="https://picsum.photos/400/400" alt="Imagen interactiva" draggable="false">
+    </div>
+
+    <script>
+        const img = document.getElementById('my-image');
+
+        // Variables de estado actuales (lo que ves en pantalla)
+        let currentScale = 1;
+        let currentRotation = 0;
+        
+        // Variables iniciales al tocar la pantalla
+        let initialDistance = 0;
+        let initialAngle = 0;
+        
+        // Variables base (guardan el estado cuando levantas los dedos)
+        let baseScale = 1;
+        let baseRotation = 0;
+
+        // 2. Calcular la distancia entre dos dedos (Teorema de Pitágoras)
+        function getDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // 3. Detectar la diferencia de ángulo (Trigonometría)
+        function getAngle(touches) {
+            const dx = touches[1].clientX - touches[0].clientX;
+            const dy = touches[1].clientY - touches[0].clientY;
+            // Math.atan2 devuelve radianes, lo multiplicamos para pasarlo a grados
+            return Math.atan2(dy, dx) * (180 / Math.PI);
+        }
+
+        // 1. Capturar eventos multitáctiles
+        img.addEventListener('touchstart', (e) => {
+            // Solo actuamos si hay exactamente 2 dedos en la pantalla
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Bloquea el comportamiento por defecto del navegador
+                
+                // Guardamos la distancia y el ángulo justo en el momento de tocar
+                initialDistance = getDistance(e.touches);
+                initialAngle = getAngle(e.touches);
+            }
+        }, { passive: false });
+
+        img.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                
+                // --- Lógica del Zoom (Pinch) ---
+                const currentDistance = getDistance(e.touches);
+                // Si la distancia actual es mayor que la inicial, el ratio es > 1 (amplía)
+                const scaleChange = currentDistance / initialDistance;
+                currentScale = baseScale * scaleChange;
+                
+                // Limitamos el zoom para que no desaparezca ni se haga gigante (entre 0.5x y 4x)
+                currentScale = Math.max(0.5, Math.min(currentScale, 4));
+
+                // --- Lógica de la Rotación ---
+                const currentTouchAngle = getAngle(e.touches);
+                const angleChange = currentTouchAngle - initialAngle;
+                currentRotation = baseRotation + angleChange;
+
+                // 4. Aplicar transformaciones CSS
+                img.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
+            }
+        }, { passive: false });
+
+        img.addEventListener('touchend', (e) => {
+            // Cuando levantamos uno o ambos dedos, actualizamos la base
+            // Así, la próxima vez que toquemos, la imagen no volverá a su tamaño original de golpe
+            if (e.touches.length < 2) {
+                baseScale = currentScale;
+                baseRotation = currentRotation;
+            }
+        });
+    </script>
+</body>
+</html>
