@@ -2,108 +2,500 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Alarma de Proximidad GPS</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Aseguramos que el mapa ocupe toda la pantalla del dispositivo móvil */
-        body { margin: 0; padding: 0; }
-        #map { width: 100vw; height: 100vh; }
+        /* Aseguramos que el mapa ocupe toda la pantalla */
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        
+        #map { 
+            width: 100vw; 
+            height: 100vh;
+            z-index: 1;
+        }
+
+        /* Overlay con información y controles */
+        #info-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 20px;
+            padding: 15px 20px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.3);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            transition: transform 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #distance-info {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #distance-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        #distance-unit {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-left: 5px;
+        }
+
+        #status-text {
+            font-size: 16px;
+            color: #27ae60;
+            font-weight: 500;
+            margin: 5px 0;
+        }
+
+        #progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #ecf0f1;
+            border-radius: 3px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        #progress-fill {
+            height: 100%;
+            background: #3498db;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:active {
+            background: #2980b9;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:active {
+            background: #7f8c8d;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:active {
+            background: #229954;
+        }
+
+        #destination-coords {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #ecf0f1;
+            word-break: break-word;
+        }
+
+        /* Indicador de precisión GPS */
+        #gps-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 30px;
+            font-size: 12px;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .gps-dot {
+            width: 10px;
+            height: 10px;
+            background: #27ae60;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Toast de notificación */
+        #toast {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: #27ae60;
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            font-weight: 600;
+            z-index: 2000;
+            box-shadow: 0 5px 20px rgba(39, 174, 96, 0.4);
+            transform: translateY(-150%);
+            transition: transform 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        #toast.show {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
 
     <div id="map"></div>
 
+    <!-- Indicador GPS -->
+    <div id="gps-indicator">
+        <span class="gps-dot"></span>
+        <span id="gps-status">Buscando GPS...</span>
+    </div>
+
+    <!-- Toast de notificación -->
+    <div id="toast">📍 ¡Has llegado a tu destino!</div>
+
+    <!-- Panel de información -->
+    <div id="info-panel">
+        <div id="distance-info">
+            <span>Distancia al destino:</span>
+            <span>
+                <span id="distance-value">---</span>
+                <span id="distance-unit">m</span>
+            </span>
+        </div>
+        
+        <div id="status-text">Selecciona un destino en el mapa</div>
+        
+        <div id="progress-bar">
+            <div id="progress-fill"></div>
+        </div>
+
+        <div class="button-container">
+            <button class="btn btn-primary" id="center-btn" disabled>
+                <span>📍</span> Centrar en mí
+            </button>
+            <button class="btn btn-secondary" id="clear-btn" disabled>
+                <span>🗑️</span> Limpiar
+            </button>
+        </div>
+
+        <div id="destination-coords"></div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
-        // 3. Inicializar el mapa
-        // Lo centramos inicialmente en una coordenada por defecto (Madrid en este caso)
+        // Inicializar mapa
         const map = L.map('map').setView([40.4168, -3.7038], 13);
 
-        // Añadir la capa de mapa (tiles) de OpenStreetMap
+        // Capa de mapa
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // Variables para guardar las posiciones y marcadores
+        // Elementos del DOM
+        const distanceValue = document.getElementById('distance-value');
+        const statusText = document.getElementById('status-text');
+        const progressFill = document.getElementById('progress-fill');
+        const destinationCoords = document.getElementById('destination-coords');
+        const gpsStatus = document.getElementById('gps-status');
+        const centerBtn = document.getElementById('center-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const toast = document.getElementById('toast');
+
+        // Variables de estado
         let destinationLatLng = null;
         let destinationMarker = null;
         let userMarker = null;
-        let hasBeenNotified = false; // Para no enviar notificaciones infinitas
+        let userCircle = null; // Círculo de precisión
+        let hasBeenNotified = false;
+        let watchId = null;
+        let currentUserPos = null;
 
-        // 4. Capturar clics/toques en la pantalla
+        // Configuración
+        const PROXIMITY_THRESHOLD = 50; // metros
+        const MAX_DISTANCE = 500; // metros para la barra de progreso
+
+        // Solicitar permiso de notificaciones al inicio
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Función para actualizar UI
+        function updateUI() {
+            if (!destinationLatLng) {
+                statusText.textContent = '👆 Toca el mapa para fijar un destino';
+                statusText.style.color = '#7f8c8d';
+                distanceValue.textContent = '---';
+                progressFill.style.width = '0%';
+                destinationCoords.textContent = '';
+                clearBtn.disabled = true;
+                return;
+            }
+
+            clearBtn.disabled = false;
+            destinationCoords.textContent = `Destino: ${destinationLatLng.lat.toFixed(6)}, ${destinationLatLng.lng.toFixed(6)}`;
+
+            if (currentUserPos) {
+                const distance = currentUserPos.distanceTo(destinationLatLng);
+                const distanceInMeters = Math.round(distance);
+                
+                // Actualizar distancia
+                if (distanceInMeters < 1000) {
+                    distanceValue.textContent = distanceInMeters;
+                    document.getElementById('distance-unit').textContent = 'm';
+                } else {
+                    distanceValue.textContent = (distanceInMeters / 1000).toFixed(1);
+                    document.getElementById('distance-unit').textContent = 'km';
+                }
+
+                // Actualizar barra de progreso (inversa: más cerca = más llena)
+                const progress = Math.min(100, Math.max(0, 100 - (distance / MAX_DISTANCE * 100)));
+                progressFill.style.width = progress + '%';
+
+                // Cambiar color según proximidad
+                if (distance < PROXIMITY_THRESHOLD) {
+                    statusText.textContent = '✅ ¡Has llegado a tu destino!';
+                    statusText.style.color = '#27ae60';
+                    progressFill.style.background = '#27ae60';
+                } else {
+                    statusText.textContent = '🚶 Dirigiéndose al destino...';
+                    statusText.style.color = '#3498db';
+                    progressFill.style.background = '#3498db';
+                }
+            }
+        }
+
+        // Función para mostrar toast
+        function showToast() {
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Evento click en mapa para fijar destino
         map.on('click', function(e) {
             destinationLatLng = e.latlng;
-            hasBeenNotified = false; // Reseteamos la notificación al cambiar de destino
+            hasBeenNotified = false;
 
-            // Si ya hay un marcador de destino, lo movemos. Si no, lo creamos.
             if (destinationMarker) {
                 destinationMarker.setLatLng(destinationLatLng);
             } else {
-                // Creamos un marcador rojo (usando un icono por defecto modificado)
-                destinationMarker = L.marker(destinationLatLng).addTo(map)
-                    .bindPopup("<b>Destino fijado</b>").openPopup();
+                destinationMarker = L.marker(destinationLatLng, {
+                    icon: L.divIcon({
+                        className: 'custom-destination-marker',
+                        html: '📍',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 30]
+                    })
+                }).addTo(map)
+                  .bindPopup("🏁 Destino fijado")
+                  .openPopup();
             }
-            console.log("Destino fijado en:", destinationLatLng);
+
+            updateUI();
+            
+            // Centrar mapa en el destino
+            map.setView(destinationLatLng, 15);
         });
 
-        // 5. Acceder a los sensores del dispositivo (Geolocalización)
+        // Botón centrar en usuario
+        centerBtn.addEventListener('click', () => {
+            if (currentUserPos) {
+                map.setView(currentUserPos, 16);
+            }
+        });
+
+        // Botón limpiar destino
+        clearBtn.addEventListener('click', () => {
+            if (destinationMarker) {
+                map.removeLayer(destinationMarker);
+                destinationMarker = null;
+            }
+            destinationLatLng = null;
+            hasBeenNotified = false;
+            updateUI();
+        });
+
+        // Geolocalización
         if ('geolocation' in navigator) {
-            // watchPosition rastrea el movimiento del usuario continuamente
-            navigator.geolocation.watchPosition(function(position) {
-                const userLatLng = L.latLng(position.coords.latitude, position.coords.longitude);
-
-                // Actualizar o crear el marcador del usuario (un círculo azul)
-                if (userMarker) {
-                    userMarker.setLatLng(userLatLng);
-                } else {
-                    userMarker = L.circleMarker(userLatLng, {
-                        color: 'blue', 
-                        radius: 8,
-                        fillOpacity: 0.8
-                    }).addTo(map).bindPopup("Tu ubicación");
+            watchId = navigator.geolocation.watchPosition(
+                function(position) {
+                    const userLatLng = L.latLng(
+                        position.coords.latitude, 
+                        position.coords.longitude
+                    );
                     
-                    // Centrar el mapa en el usuario la primera vez que lo detecta
-                    map.setView(userLatLng, 15);
-                }
-
-                // 6. Lógica de proximidad y notificación
-                if (destinationLatLng && !hasBeenNotified) {
-                    // Leaflet tiene un método súper útil para calcular distancia en metros
-                    const distance = userLatLng.distanceTo(destinationLatLng);
+                    currentUserPos = userLatLng;
                     
-                    // Si estamos a menos de 50 metros, lanzamos la notificación
-                    if (distance < 50) {
-                        hasBeenNotified = true; // Evitar que salte la alerta cada segundo
+                    // Actualizar estado GPS
+                    gpsStatus.textContent = 'GPS activo';
+                    gpsStatus.style.color = '#27ae60';
+                    centerBtn.disabled = false;
+
+                    // Actualizar o crear marcador de usuario
+                    if (userMarker) {
+                        userMarker.setLatLng(userLatLng);
+                    } else {
+                        userMarker = L.circleMarker(userLatLng, {
+                            color: '#3498db',
+                            radius: 8,
+                            weight: 2,
+                            fillColor: '#3498db',
+                            fillOpacity: 0.8
+                        }).addTo(map).bindPopup("Tu ubicación");
                         
-                        alert("📍 ¡Has llegado o estás muy cerca de tu destino!");
+                        // Centrar mapa en usuario la primera vez
+                        map.setView(userLatLng, 15);
+                    }
+
+                    // Actualizar círculo de precisión
+                    if (userCircle) {
+                        userCircle.setLatLng(userLatLng);
+                        userCircle.setRadius(position.coords.accuracy);
+                    } else {
+                        userCircle = L.circle(userLatLng, {
+                            color: '#3498db',
+                            weight: 1,
+                            opacity: 0.3,
+                            fillColor: '#3498db',
+                            fillOpacity: 0.1,
+                            radius: position.coords.accuracy
+                        }).addTo(map);
+                    }
+
+                    // Lógica de proximidad
+                    if (destinationLatLng && !hasBeenNotified) {
+                        const distance = userLatLng.distanceTo(destinationLatLng);
                         
-                        // Opcional: Intentar usar la API de Notificaciones del sistema
-                        if (Notification.permission === "granted") {
-                            new Notification("¡Destino alcanzado!");
-                        } else if (Notification.permission !== "denied") {
-                            Notification.requestPermission().then(permission => {
-                                if (permission === "granted") {
-                                    new Notification("¡Destino alcanzado!");
-                                }
-                            });
+                        if (distance < PROXIMITY_THRESHOLD) {
+                            hasBeenNotified = true;
+                            
+                            // Toast
+                            showToast();
+                            
+                            // Notificación del sistema
+                            if (Notification.permission === "granted") {
+                                new Notification("📍 ¡Destino alcanzado!", {
+                                    body: "Has llegado a tu destino",
+                                    icon: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png"
+                                });
+                            }
+                            
+                            // Cambiar color del marcador de destino
+                            if (destinationMarker) {
+                                destinationMarker.setIcon(L.divIcon({
+                                    className: 'custom-destination-marker',
+                                    html: '🏁',
+                                    iconSize: [30, 30],
+                                    iconAnchor: [15, 30]
+                                }));
+                            }
                         }
                     }
+
+                    updateUI();
+                },
+                function(error) {
+                    console.error("Error GPS:", error);
+                    gpsStatus.textContent = 'GPS no disponible';
+                    gpsStatus.style.color = '#e74c3c';
+                    
+                    let errorMsg = "Error de geolocalización";
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg = "Permiso denegado";
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg = "Posición no disponible";
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg = "Tiempo de espera agotado";
+                            break;
+                    }
+                    statusText.textContent = `⚠️ ${errorMsg}`;
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 10000
                 }
-            }, function(error) {
-                console.error("Error obteniendo ubicación:", error);
-            }, {
-                enableHighAccuracy: true, // Pedimos la mayor precisión al GPS
-                maximumAge: 0
-            });
+            );
         } else {
             alert("Tu navegador no soporta geolocalización.");
+            gpsStatus.textContent = 'No soportado';
         }
+
+        // Limpiar watchPosition al salir (buena práctica)
+        window.addEventListener('beforeunload', () => {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        });
+
+        // Inicializar UI
+        updateUI();
     </script>
 </body>
 </html>

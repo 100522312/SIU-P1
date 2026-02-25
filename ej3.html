@@ -2,7 +2,6 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    /* user-scalable=no es crucial para evitar que el navegador haga su propio zoom nativo */
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pinch to Zoom y Rotación</title>
     <style>
@@ -12,8 +11,9 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            background-color: #2c3e50;
-            overflow: hidden; /* Evita que la pantalla se desplace */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            font-family: sans-serif;
         }
 
         #image-container {
@@ -22,107 +22,233 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
         }
 
         #my-image {
             width: 100%;
+            height: 100%;
+            object-fit: cover;
             border-radius: 10px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-            /* El origen de la transformación será el centro de la imagen */
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
             transform-origin: center center;
-            /* No usamos 'transition' aquí para que el seguimiento del dedo sea instantáneo */
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
         }
         
         .instrucciones {
             position: absolute;
-            top: 20px;
+            top: 30px;
+            left: 0;
+            right: 0;
             color: white;
-            font-family: sans-serif;
             text-align: center;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            font-size: 18px;
             pointer-events: none;
+            z-index: 10;
+        }
+
+        .instrucciones span {
+            display: inline-block;
+            background-color: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border-radius: 40px;
+            backdrop-filter: blur(5px);
+        }
+
+        #debug-info {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            pointer-events: none;
+            backdrop-filter: blur(5px);
+        }
+
+        #reset-btn {
+            position: absolute;
+            bottom: 30px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: white;
+            color: #764ba2;
+            border: none;
+            border-radius: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+            z-index: 20;
+        }
+
+        #reset-btn:active {
+            transform: scale(0.95);
         }
     </style>
 </head>
 <body>
-    <div class="instrucciones">Usa dos dedos para hacer zoom y rotar</div>
+    <div class="instrucciones">
+        <span>👆 Usa dos dedos para hacer zoom y rotar</span>
+    </div>
 
     <div id="image-container">
-        <img id="my-image" src="https://picsum.photos/400/400" alt="Imagen interactiva" draggable="false">
+        <img id="my-image" src="https://picsum.photos/400/400?random=1" alt="Imagen interactiva" draggable="false">
     </div>
+
+    <div id="debug-info">
+        <div>Escala: <span id="scale-value">1.00x</span></div>
+        <div>Rotación: <span id="rotation-value">0°</span></div>
+    </div>
+
+    <button id="reset-btn">🔄 Resetear</button>
 
     <script>
         const img = document.getElementById('my-image');
+        const scaleValue = document.getElementById('scale-value');
+        const rotationValue = document.getElementById('rotation-value');
+        const resetBtn = document.getElementById('reset-btn');
 
-        // Variables de estado actuales (lo que ves en pantalla)
+        // Variables de estado
         let currentScale = 1;
         let currentRotation = 0;
         
-        // Variables iniciales al tocar la pantalla
+        // Variables para el gesto actual
         let initialDistance = 0;
         let initialAngle = 0;
+        let initialScale = 1;
+        let initialRotation = 0;
         
-        // Variables base (guardan el estado cuando levantas los dedos)
+        // Variables base (estado cuando se levantan los dedos)
         let baseScale = 1;
         let baseRotation = 0;
 
-        // 2. Calcular la distancia entre dos dedos (Teorema de Pitágoras)
+        // Flag para saber si estamos en un gesto multitáctil
+        let isPinching = false;
+
+        // Función para actualizar la UI de debug
+        function updateDebugInfo() {
+            scaleValue.textContent = currentScale.toFixed(2) + 'x';
+            rotationValue.textContent = Math.round(currentRotation) + '°';
+        }
+
+        // Aplicar transformación a la imagen
+        function applyTransform() {
+            img.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
+            updateDebugInfo();
+        }
+
+        // Calcular distancia entre dos puntos (Teorema de Pitágoras)
         function getDistance(touches) {
             const dx = touches[0].clientX - touches[1].clientX;
             const dy = touches[0].clientY - touches[1].clientY;
             return Math.sqrt(dx * dx + dy * dy);
         }
 
-        // 3. Detectar la diferencia de ángulo (Trigonometría)
+        // Calcular ángulo entre dos puntos (Trigonometría)
         function getAngle(touches) {
             const dx = touches[1].clientX - touches[0].clientX;
             const dy = touches[1].clientY - touches[0].clientY;
-            // Math.atan2 devuelve radianes, lo multiplicamos para pasarlo a grados
             return Math.atan2(dy, dx) * (180 / Math.PI);
         }
 
-        // 1. Capturar eventos multitáctiles
+        // Iniciar gesto multitáctil
         img.addEventListener('touchstart', (e) => {
-            // Solo actuamos si hay exactamente 2 dedos en la pantalla
-            if (e.touches.length === 2) {
-                e.preventDefault(); // Bloquea el comportamiento por defecto del navegador
-                
-                // Guardamos la distancia y el ángulo justo en el momento de tocar
-                initialDistance = getDistance(e.touches);
-                initialAngle = getAngle(e.touches);
-            }
-        }, { passive: false });
-
-        img.addEventListener('touchmove', (e) => {
             if (e.touches.length === 2) {
                 e.preventDefault();
                 
-                // --- Lógica del Zoom (Pinch) ---
-                const currentDistance = getDistance(e.touches);
-                // Si la distancia actual es mayor que la inicial, el ratio es > 1 (amplía)
-                const scaleChange = currentDistance / initialDistance;
-                currentScale = baseScale * scaleChange;
+                isPinching = true;
                 
-                // Limitamos el zoom para que no desaparezca ni se haga gigante (entre 0.5x y 4x)
-                currentScale = Math.max(0.5, Math.min(currentScale, 4));
-
-                // --- Lógica de la Rotación ---
-                const currentTouchAngle = getAngle(e.touches);
-                const angleChange = currentTouchAngle - initialAngle;
-                currentRotation = baseRotation + angleChange;
-
-                // 4. Aplicar transformaciones CSS
-                img.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
+                // Guardar estado inicial del gesto
+                initialDistance = getDistance(e.touches);
+                initialAngle = getAngle(e.touches);
+                initialScale = baseScale;
+                initialRotation = baseRotation;
             }
         }, { passive: false });
 
+        // Procesar movimiento durante el gesto
+        img.addEventListener('touchmove', (e) => {
+            if (!isPinching || e.touches.length !== 2) return;
+            
+            e.preventDefault();
+            
+            // Calcular cambios
+            const currentDistance = getDistance(e.touches);
+            const currentAngle = getAngle(e.touches);
+            
+            // --- ZOOM: basado en cambio de distancia ---
+            const scaleChange = currentDistance / initialDistance;
+            currentScale = initialScale * scaleChange;
+            
+            // Limitar escala para que no sea demasiado pequeña ni grande
+            currentScale = Math.max(0.3, Math.min(currentScale, 5));
+            
+            // --- ROTACIÓN: basada en cambio de ángulo ---
+            let angleChange = currentAngle - initialAngle;
+            
+            // Normalizar el ángulo para evitar saltos bruscos
+            angleChange = ((angleChange % 360) + 360) % 360;
+            if (angleChange > 180) angleChange -= 360;
+            
+            currentRotation = initialRotation + angleChange;
+            
+            // Aplicar transformación
+            applyTransform();
+        }, { passive: false });
+
+        // Finalizar gesto
         img.addEventListener('touchend', (e) => {
-            // Cuando levantamos uno o ambos dedos, actualizamos la base
-            // Así, la próxima vez que toquemos, la imagen no volverá a su tamaño original de golpe
-            if (e.touches.length < 2) {
+            if (isPinching) {
+                isPinching = false;
+                
+                // Guardar estado base para futuros gestos
                 baseScale = currentScale;
                 baseRotation = currentRotation;
             }
         });
+
+        img.addEventListener('touchcancel', (e) => {
+            if (isPinching) {
+                isPinching = false;
+                baseScale = currentScale;
+                baseRotation = currentRotation;
+            }
+        });
+
+        // Resetear a valores iniciales
+        resetBtn.addEventListener('click', () => {
+            currentScale = 1;
+            currentRotation = 0;
+            baseScale = 1;
+            baseRotation = 0;
+            isPinching = false;
+            
+            applyTransform();
+        });
+
+        // Prevenir menú contextual en la imagen
+        img.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Prevenir el zoom del navegador con doble tap
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // Inicializar debug
+        applyTransform();
     </script>
 </body>
 </html>
