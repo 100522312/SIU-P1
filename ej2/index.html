@@ -2,9 +2,14 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <!-- Configuración para móvil: ancho del dispositivo, sin zoom -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Juego de Inclinación</title>
     <style>
+        /* 
+          Estilos básicos: fondo oscuro, tablero en el centro, 
+          bola roja y objetivo verde.
+        */
         body {
             margin: 0;
             overflow: hidden;
@@ -25,7 +30,7 @@
             background-color: #ecf0f1;
             border: 5px solid #bdc3c7;
             border-radius: 10px;
-            overflow: hidden;
+            overflow: hidden;        /* Para que la bola no se salga visualmente del tablero */
             box-shadow: 0 10px 20px rgba(0,0,0,0.3);
         }
 
@@ -39,7 +44,7 @@
             top: 0;
             left: 0;
             transform: translate(0px, 0px);
-            transition: transform 0.03s linear;
+            transition: transform 0.03s linear;  /* Movimiento suave */
         }
 
         #target {
@@ -80,30 +85,32 @@
     </div>
 
     <script>
+        // Elementos del DOM
         const ball = document.getElementById('ball');
         const target = document.getElementById('target');
         const startBtn = document.getElementById('start-btn');
         const board = document.getElementById('game-board');
 
-        // Variables de posición de la bola
+        // Variables de posición de la bola (en píxeles)
         let ballX = 0;
         let ballY = 0;
         
-        // Tamaños
+        // Tamaños de los elementos
         const ballSize = 30;
         const targetSize = 40;
         
-        // Posición del target (la calculamos desde el CSS)
-        let targetX = 130; // Valor por defecto
-        let targetY = 330; // Valor por defecto
+        // Posición del target (se actualizará dinámicamente por si cambia el diseño)
+        let targetX = 130;   // Valor inicial por CSS
+        let targetY = 330;   // Valor inicial por CSS
 
-        let gameActive = false;
+        let gameActive = false;  // Controla si el juego está corriendo
 
-        // Variables para guardar la inclinación
-        let pitch = 0; // Eje Y (Adelante/Atrás)
-        let roll = 0;  // Eje X (Izquierda/Derecha)
+        // Valores de inclinación (en grados)
+        let pitch = 0;  // Eje Y (adelante/atrás) → movimiento vertical
+        let roll = 0;   // Eje X (izquierda/derecha) → movimiento horizontal
 
-        // Función para actualizar la posición real del target
+        // Función para calcular la posición real del target dentro del tablero
+        // Usamos getBoundingClientRect para obtener coordenadas relativas al board
         function updateTargetPosition() {
             const boardRect = board.getBoundingClientRect();
             const targetRect = target.getBoundingClientRect();
@@ -112,14 +119,16 @@
             targetY = targetRect.top - boardRect.top;
         }
 
-        // Llamamos una vez al inicio y cada vez que cambie el tamaño
+        // Actualizar posición del target si la ventana cambia de tamaño (ej. rotación)
         window.addEventListener('resize', updateTargetPosition);
 
-        // 1. Iniciar los eventos
+        //     MANEJO DE PERMISOS EN IOS 
+        // En iOS, para usar DeviceOrientationEvent se requiere permiso explícito.
         startBtn.addEventListener('click', requestAccess);
 
         function requestAccess() {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // Es iOS y necesita permiso
                 DeviceOrientationEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === 'granted') {
@@ -130,65 +139,77 @@
                     })
                     .catch(console.error);
             } else {
+                // En Android o navegadores que no requieren permiso, empezamos directamente
                 startGame();
             }
         }
 
+        // Inicia el juego: oculta botón, activa flag, posiciona bola y escucha sensores
         function startGame() {
             startBtn.style.display = 'none';
             gameActive = true;
             
-            // Actualizamos posición del target
+            // Actualizamos la posición del target (por si ha cambiado)
             updateTargetPosition();
             
-            // Posición inicial de la bola (centro superior)
+            // Posición inicial: centro superior del tablero
             ballX = (board.clientWidth / 2) - (ballSize / 2);
             ballY = 20;
             
             // Aplicamos la posición inicial
             ball.style.transform = `translate(${ballX}px, ${ballY}px)`;
             
+            // Nos suscribimos al evento deviceorientation
             window.addEventListener('deviceorientation', handleOrientation);
+            
+            // Iniciamos el bucle de animación para mover la bola
             requestAnimationFrame(updatePosition);
         }
 
+        // Manejador del evento de orientación
         function handleOrientation(event) {
             if (!gameActive) return;
 
-            // Normalizamos los valores para que sean más manejables
-            // Limitamos a ±45 grados para que no sea demasiado sensible
-            // event.beta es pitch (adelante/atrás), event.gamma es roll (izquierda/derecha)
+            // event.beta: inclinación hacia adelante/atrás (pitch) en grados, rango [-180,180]
+            // event.gamma: inclinación izquierda/derecha (roll) en grados, rango [-90,90]
             pitch = event.beta || 0;
             roll = event.gamma || 0;
             
-            // Limitamos el rango para mejor control
+            // Limitamos los valores a ±45 grados para que el juego no sea demasiado sensible
             pitch = Math.max(-45, Math.min(45, pitch));
             roll = Math.max(-45, Math.min(45, roll));
         }
 
+        // Bucle de actualización de la posición (llamado continuamente con requestAnimationFrame)
         function updatePosition() {
             if (!gameActive) return;
 
-            // Velocidad de movimiento (ajustable)
+            // Velocidad de movimiento: ajusta la sensibilidad
             const speed = 0.15;
             
-            // Actualizamos posición basada en inclinación
+            // Actualizamos posición en función de la inclinación
+            // Nota: roll afecta X, pitch afecta Y (pero según la orientación del móvil podría intercambiarse)
             ballX += roll * speed;
             ballY += pitch * speed;
 
-            // Límites dinámicos del tablero
+            // Límites: la bola no puede salirse del tablero
             const maxX = board.clientWidth - ballSize;
             const maxY = board.clientHeight - ballSize;
             
             ballX = Math.max(0, Math.min(ballX, maxX));
             ballY = Math.max(0, Math.min(ballY, maxY));
 
+            // Aplicamos la nueva posición (usamos translate para mejor rendimiento)
             ball.style.transform = `translate(${ballX}px, ${ballY}px)`;
 
+            // Verificamos si la bola ha colisionado con el target
             checkCollision();
+
+            // Solicitamos el siguiente frame
             requestAnimationFrame(updatePosition);
         }
 
+        // Detección de colisión mediante distancia entre centros
         function checkCollision() {
             // Centro de la bola
             const ballCenterX = ballX + ballSize/2;
@@ -198,20 +219,22 @@
             const targetCenterX = targetX + targetSize/2;
             const targetCenterY = targetY + targetSize/2;
 
+            // Distancia euclidiana
             const dx = ballCenterX - targetCenterX;
             const dy = ballCenterY - targetCenterY;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Si la distancia es menor que la suma de los radios, hay colisión
+            // Colisión si la distancia es menor que la suma de los radios
             if (distance < (ballSize/2 + targetSize/2)) {
-                gameActive = false;
-                ball.style.backgroundColor = '#2ecc71';
+                gameActive = false;          // Detenemos el movimiento
+                ball.style.backgroundColor = '#2ecc71'; // Cambia a verde
                 
-                // Vibración si está soportado
+                // Vibración si el navegador lo soporta
                 if (navigator.vibrate) {
                     navigator.vibrate(200);
                 }
                 
+                // Mostramos alerta y reiniciamos
                 setTimeout(() => {
                     alert("¡Objetivo alcanzado! 🎉");
                     resetGame();
@@ -219,6 +242,7 @@
             }
         }
 
+        // Reinicia el juego: bola al inicio, color rojo, reactiva sensores
         function resetGame() {
             ballX = (board.clientWidth / 2) - (ballSize / 2);
             ballY = 20;
@@ -230,20 +254,21 @@
             
             gameActive = true;
             
-            // Aseguramos que seguimos escuchando los sensores
+            // Aseguramos que seguimos escuchando el evento (por si se perdió)
             if (!window.ondeviceorientation) {
                 window.addEventListener('deviceorientation', handleOrientation);
             }
             
+            // Reiniciamos el bucle de animación
             requestAnimationFrame(updatePosition);
         }
 
-        // Pequeña mejora: pausar cuando la pestaña no está visible
+        // Mejora: pausar el juego cuando la pestaña no está visible
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
-                gameActive = false;
+                gameActive = false;  // Pausa
             } else if (startBtn.style.display === 'none') {
-                // Solo reactivar si el juego había empezado
+                // Si el juego ya había empezado, lo reanudamos
                 gameActive = true;
                 requestAnimationFrame(updatePosition);
             }

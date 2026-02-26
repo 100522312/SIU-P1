@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <!-- Meta para móvil: deshabilitar zoom y escalado automático del navegador -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pinch to Zoom y Rotación</title>
     <style>
@@ -30,13 +31,13 @@
         #my-image {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: cover;          /* La imagen se adapta sin deformarse */
             border-radius: 10px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            transform-origin: center center;
-            user-select: none;
+            transform-origin: center center;   /* La transformación se aplica desde el centro */
+            user-select: none;                  /* Evita selección de texto/imagen */
             -webkit-user-select: none;
-            -webkit-touch-callout: none;
+            -webkit-touch-callout: none;        /* Evita menú contextual al mantener pulsado */
         }
         
         .instrucciones {
@@ -48,7 +49,7 @@
             text-align: center;
             text-shadow: 0 2px 5px rgba(0,0,0,0.3);
             font-size: 18px;
-            pointer-events: none;
+            pointer-events: none;                /* Para que los toques pasen a la imagen */
             z-index: 10;
         }
 
@@ -100,6 +101,7 @@
     </div>
 
     <div id="image-container">
+        <!-- Imagen de ejemplo (de picsum) -->
         <img id="my-image" src="https://picsum.photos/400/400?random=1" alt="Imagen interactiva" draggable="false">
     </div>
 
@@ -116,105 +118,107 @@
         const rotationValue = document.getElementById('rotation-value');
         const resetBtn = document.getElementById('reset-btn');
 
-        // Variables de estado
+        // Variables de estado actuales (transformación aplicada en cada momento)
         let currentScale = 1;
         let currentRotation = 0;
         
-        // Variables para el gesto actual
-        let initialDistance = 0;
-        let initialAngle = 0;
-        let initialScale = 1;
-        let initialRotation = 0;
+        // Variables para el gesto en curso
+        let initialDistance = 0;        // Distancia inicial entre dedos
+        let initialAngle = 0;           // Ángulo inicial de la línea que forman los dedos
+        let initialScale = 1;            // Escala al comenzar el gesto
+        let initialRotation = 0;         // Rotación al comenzar el gesto
         
-        // Variables base (estado cuando se levantan los dedos)
+        // Variables base: estado cuando no hay gesto activo (se actualizan al levantar dedos)
         let baseScale = 1;
         let baseRotation = 0;
 
-        // Flag para saber si estamos en un gesto multitáctil
-        let isPinching = false;
+        let isPinching = false;          // Indica si hay un gesto multitáctil activo
 
-        // Función para actualizar la UI de debug
+        // Actualiza los valores de debug en pantalla
         function updateDebugInfo() {
             scaleValue.textContent = currentScale.toFixed(2) + 'x';
             rotationValue.textContent = Math.round(currentRotation) + '°';
         }
 
-        // Aplicar transformación a la imagen
+        // Aplica la transformación CSS a la imagen
         function applyTransform() {
             img.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
             updateDebugInfo();
         }
 
-        // Calcular distancia entre dos puntos (Teorema de Pitágoras)
+        // Calcula la distancia euclidiana entre dos puntos táctiles
         function getDistance(touches) {
             const dx = touches[0].clientX - touches[1].clientX;
             const dy = touches[0].clientY - touches[1].clientY;
             return Math.sqrt(dx * dx + dy * dy);
         }
 
-        // Calcular ángulo entre dos puntos (Trigonometría)
+        // Calcula el ángulo (en grados) de la línea que une dos puntos
         function getAngle(touches) {
             const dx = touches[1].clientX - touches[0].clientX;
             const dy = touches[1].clientY - touches[0].clientY;
             return Math.atan2(dy, dx) * (180 / Math.PI);
         }
 
-        // Iniciar gesto multitáctil
+        //  EVENTOS TÁCTILES 
+
+        // Inicio del gesto: detectamos dos dedos
         img.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
-                e.preventDefault();
+                e.preventDefault();   // Evita comportamientos por defecto como scroll o zoom de página
                 
                 isPinching = true;
                 
-                // Guardar estado inicial del gesto
+                // Guardamos el estado inicial del gesto
                 initialDistance = getDistance(e.touches);
                 initialAngle = getAngle(e.touches);
                 initialScale = baseScale;
                 initialRotation = baseRotation;
             }
-        }, { passive: false });
+        }, { passive: false });  // passive: false para poder llamar preventDefault
 
-        // Procesar movimiento durante el gesto
+        // Durante el movimiento de los dedos
         img.addEventListener('touchmove', (e) => {
             if (!isPinching || e.touches.length !== 2) return;
             
-            e.preventDefault();
+            e.preventDefault();   // Evita el zoom de la página
             
-            // Calcular cambios
+            // Calculamos la nueva distancia y ángulo
             const currentDistance = getDistance(e.touches);
             const currentAngle = getAngle(e.touches);
             
-            // --- ZOOM: basado en cambio de distancia ---
+            // ZOOM: factor de escala proporcional al cambio de distancia ---
             const scaleChange = currentDistance / initialDistance;
             currentScale = initialScale * scaleChange;
             
-            // Limitar escala para que no sea demasiado pequeña ni grande
+            // Limitamos la escala para que no sea ni muy pequeña ni muy grande
             currentScale = Math.max(0.3, Math.min(currentScale, 5));
             
-            // --- ROTACIÓN: basada en cambio de ángulo ---
+            // ROTACIÓN: diferencia de ángulo respecto al inicio ---
             let angleChange = currentAngle - initialAngle;
             
-            // Normalizar el ángulo para evitar saltos bruscos
+            // Normalizamos el ángulo para que esté entre -180 y 180 (evita saltos al pasar de 359 a 0)
             angleChange = ((angleChange % 360) + 360) % 360;
             if (angleChange > 180) angleChange -= 360;
             
             currentRotation = initialRotation + angleChange;
             
-            // Aplicar transformación
+            // Aplicamos la transformación
             applyTransform();
         }, { passive: false });
 
-        // Finalizar gesto
+        // Fin del gesto: al levantar uno o ambos dedos
         img.addEventListener('touchend', (e) => {
             if (isPinching) {
                 isPinching = false;
                 
-                // Guardar estado base para futuros gestos
+                // Guardamos el estado actual como base para el próximo gesto
                 baseScale = currentScale;
                 baseRotation = currentRotation;
             }
         });
 
+        // Si el gesto se cancela (ej. llamada telefónica), también guardamos el estado
         img.addEventListener('touchcancel', (e) => {
             if (isPinching) {
                 isPinching = false;
@@ -223,7 +227,7 @@
             }
         });
 
-        // Resetear a valores iniciales
+        // Botón de reset: vuelve a escala 1 y rotación 0
         resetBtn.addEventListener('click', () => {
             currentScale = 1;
             currentRotation = 0;
@@ -234,20 +238,20 @@
             applyTransform();
         });
 
-        // Prevenir menú contextual en la imagen
+        // Prevenir menú contextual al hacer clic derecho (en escritorio) o mantener pulsado
         img.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        // Prevenir el zoom del navegador con doble tap
+        // Prevenir el zoom del navegador con doble tap (muy común en móviles)
         let lastTouchEnd = 0;
         document.addEventListener('touchend', (e) => {
             const now = Date.now();
             if (now - lastTouchEnd <= 300) {
-                e.preventDefault();
+                e.preventDefault();   // Evita el doble tap zoom
             }
             lastTouchEnd = now;
         }, { passive: false });
 
-        // Inicializar debug
+        // Inicializar la transformación y el debug
         applyTransform();
     </script>
 </body>

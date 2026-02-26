@@ -2,18 +2,25 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <!-- Configuración viewport para móvil: ancho = dispositivo, escala inicial = 1, zoom deshabilitado -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Alarma de Proximidad GPS</title>
     
+    <!-- Hoja de estilos de Leaflet (mapa) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        /* Aseguramos que el mapa ocupe toda la pantalla */
+        /* 
+          Estilos pensados para una interfaz tipo app móvil:
+          - El mapa ocupa toda la pantalla
+          - Panel inferior con información y controles, con efecto blur
+          - Toast de notificación y badge de estado GPS
+        */
         body { 
             margin: 0; 
             padding: 0; 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            overflow: hidden;
+            overflow: hidden; /* Evita scroll */
         }
         
         #map { 
@@ -22,7 +29,7 @@
             z-index: 1;
         }
 
-        /* Overlay con información y controles */
+        /* Panel superpuesto en la parte inferior */
         #info-panel {
             position: absolute;
             bottom: 30px;
@@ -33,7 +40,7 @@
             padding: 15px 20px;
             box-shadow: 0 5px 25px rgba(0,0,0,0.3);
             z-index: 1000;
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);        /* Efecto vidrio */
             background: rgba(255, 255, 255, 0.95);
             transition: transform 0.3s ease;
             border: 1px solid rgba(255,255,255,0.2);
@@ -67,6 +74,7 @@
             margin: 5px 0;
         }
 
+        /* Barra de progreso que se llena a medida que nos acercamos */
         #progress-bar {
             width: 100%;
             height: 6px;
@@ -84,6 +92,7 @@
             border-radius: 3px;
         }
 
+        /* Contenedor de botones en fila */
         .button-container {
             display: flex;
             gap: 10px;
@@ -106,7 +115,7 @@
         }
 
         .btn:active {
-            transform: scale(0.97);
+            transform: scale(0.97);          /* Feedback táctil */
         }
 
         .btn-primary {
@@ -145,7 +154,7 @@
             word-break: break-word;
         }
 
-        /* Indicador de precisión GPS */
+        /* Indicador de precisión GPS (esquina superior derecha) */
         #gps-indicator {
             position: absolute;
             top: 20px;
@@ -167,7 +176,7 @@
             height: 10px;
             background: #27ae60;
             border-radius: 50%;
-            animation: pulse 1.5s infinite;
+            animation: pulse 1.5s infinite;   /* Animación para indicar que está activo */
         }
 
         @keyframes pulse {
@@ -176,7 +185,7 @@
             100% { opacity: 1; transform: scale(1); }
         }
 
-        /* Toast de notificación */
+        /* Toast de notificación que aparece desde arriba */
         #toast {
             position: absolute;
             top: 20px;
@@ -196,7 +205,7 @@
         }
 
         #toast.show {
-            transform: translateY(0);
+            transform: translateY(0);         /* Clase que muestra el toast */
         }
     </style>
 </head>
@@ -210,10 +219,10 @@
         <span id="gps-status">Buscando GPS...</span>
     </div>
 
-    <!-- Toast de notificación -->
+    <!-- Toast de notificación (inicialmente oculto) -->
     <div id="toast">📍 ¡Has llegado a tu destino!</div>
 
-    <!-- Panel de información -->
+    <!-- Panel de información inferior -->
     <div id="info-panel">
         <div id="distance-info">
             <span>Distancia al destino:</span>
@@ -241,19 +250,20 @@
         <div id="destination-coords"></div>
     </div>
 
+    <!-- Librería Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <script>
-        // Inicializar mapa
-        const map = L.map('map').setView([40.4168, -3.7038], 13);
+        //      INICIALIZACIÓN DEL MAPA 
+        const map = L.map('map').setView([40.4168, -3.7038], 13); // Madrid centro, zoom 13
 
-        // Capa de mapa
+        // Capa de teselas de OpenStreetMap
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // Elementos del DOM
+        // Referencias a elementos del DOM
         const distanceValue = document.getElementById('distance-value');
         const statusText = document.getElementById('status-text');
         const progressFill = document.getElementById('progress-fill');
@@ -263,26 +273,28 @@
         const clearBtn = document.getElementById('clear-btn');
         const toast = document.getElementById('toast');
 
-        // Variables de estado
-        let destinationLatLng = null;
-        let destinationMarker = null;
-        let userMarker = null;
-        let userCircle = null; // Círculo de precisión
-        let hasBeenNotified = false;
-        let watchId = null;
-        let currentUserPos = null;
+        //     VARIABLES DE ESTADO 
+        let destinationLatLng = null;          // Coordenadas del destino (objeto LatLng de Leaflet)
+        let destinationMarker = null;           // Marcador visual del destino
+        let userMarker = null;                  // Marcador de la posición del usuario (círculo pequeño)
+        let userCircle = null;                   // Círculo de precisión GPS
+        let hasBeenNotified = false;             // Control para notificar una sola vez
+        let watchId = null;                       // ID del watcher de geolocalización
+        let currentUserPos = null;                // Última posición conocida del usuario
 
-        // Configuración
-        const PROXIMITY_THRESHOLD = 50; // metros
-        const MAX_DISTANCE = 500; // metros para la barra de progreso
+        // Configuración de umbrales
+        const PROXIMITY_THRESHOLD = 50;          // Metros para considerar "llegado"
+        const MAX_DISTANCE = 500;                 // Metros usados para la barra de progreso (a más de 500m se queda vacía)
 
-        // Solicitar permiso de notificaciones al inicio
+        // Solicitar permiso de notificaciones del sistema al cargar la página
         if ('Notification' in window && Notification.permission === 'default') {
             Notification.requestPermission();
         }
 
-        // Función para actualizar UI
+        //       FUNCIÓN DE ACTUALIZACIÓN DE LA INTERFAZ 
+        // Se llama cada vez que cambia la posición del usuario o el destino
         function updateUI() {
+            // Si no hay destino fijado, mostramos mensaje y deshabilitamos limpiar
             if (!destinationLatLng) {
                 statusText.textContent = '👆 Toca el mapa para fijar un destino';
                 statusText.style.color = '#7f8c8d';
@@ -297,10 +309,11 @@
             destinationCoords.textContent = `Destino: ${destinationLatLng.lat.toFixed(6)}, ${destinationLatLng.lng.toFixed(6)}`;
 
             if (currentUserPos) {
+                // Calcular distancia entre usuario y destino (método de Leaflet)
                 const distance = currentUserPos.distanceTo(destinationLatLng);
                 const distanceInMeters = Math.round(distance);
                 
-                // Actualizar distancia
+                // Mostrar en metros o kilómetros según magnitud
                 if (distanceInMeters < 1000) {
                     distanceValue.textContent = distanceInMeters;
                     document.getElementById('distance-unit').textContent = 'm';
@@ -309,13 +322,14 @@
                     document.getElementById('distance-unit').textContent = 'km';
                 }
 
-                // Actualizar barra de progreso (inversa: más cerca = más llena)
+                // Barra de progreso: a menor distancia, más llena (inversa)
+                // Si distance >= MAX_DISTANCE, progress = 0; si distance = 0, progress = 100
                 const progress = Math.min(100, Math.max(0, 100 - (distance / MAX_DISTANCE * 100)));
                 progressFill.style.width = progress + '%';
 
-                // Cambiar color según proximidad
+                // Cambiar color y texto según proximidad
                 if (distance < PROXIMITY_THRESHOLD) {
-                    statusText.textContent = '✅ ¡Has llegado a tu destino!';
+                    statusText.textContent = ' ¡Has llegado a tu destino!';
                     statusText.style.color = '#27ae60';
                     progressFill.style.background = '#27ae60';
                 } else {
@@ -326,28 +340,30 @@
             }
         }
 
-        // Función para mostrar toast
+        // Función para mostrar el toast (notificación emergente)
         function showToast() {
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
-            }, 3000);
+            }, 3000); // Desaparece a los 3 segundos
         }
 
-        // Evento click en mapa para fijar destino
+        //      EVENTO CLICK EN EL MAPA: FIJAR DESTINO 
         map.on('click', function(e) {
             destinationLatLng = e.latlng;
-            hasBeenNotified = false;
+            hasBeenNotified = false; // Reiniciamos notificación para el nuevo destino
 
+            // Crear o actualizar marcador de destino
             if (destinationMarker) {
                 destinationMarker.setLatLng(destinationLatLng);
             } else {
+                // Usamos un icono personalizado con un emoji (📍) usando L.divIcon
                 destinationMarker = L.marker(destinationLatLng, {
                     icon: L.divIcon({
                         className: 'custom-destination-marker',
                         html: '📍',
                         iconSize: [30, 30],
-                        iconAnchor: [15, 30]
+                        iconAnchor: [15, 30]  // El ancla apunta a la punta del marcador
                     })
                 }).addTo(map)
                   .bindPopup("🏁 Destino fijado")
@@ -356,18 +372,18 @@
 
             updateUI();
             
-            // Centrar mapa en el destino
+            // Centrar el mapa en el destino con zoom 15
             map.setView(destinationLatLng, 15);
         });
 
-        // Botón centrar en usuario
+        // Botón para centrar el mapa en la posición del usuario
         centerBtn.addEventListener('click', () => {
             if (currentUserPos) {
                 map.setView(currentUserPos, 16);
             }
         });
 
-        // Botón limpiar destino
+        // Botón para limpiar el destino
         clearBtn.addEventListener('click', () => {
             if (destinationMarker) {
                 map.removeLayer(destinationMarker);
@@ -378,9 +394,11 @@
             updateUI();
         });
 
-        // Geolocalización
+        //     GEOLOCALIZACIÓN 
         if ('geolocation' in navigator) {
+            // watchPosition llama a la función cada vez que la posición cambia
             watchId = navigator.geolocation.watchPosition(
+                // Éxito: se recibe una nueva posición
                 function(position) {
                     const userLatLng = L.latLng(
                         position.coords.latitude, 
@@ -389,12 +407,12 @@
                     
                     currentUserPos = userLatLng;
                     
-                    // Actualizar estado GPS
+                    // Actualizar indicador de estado GPS
                     gpsStatus.textContent = 'GPS activo';
                     gpsStatus.style.color = '#27ae60';
                     centerBtn.disabled = false;
 
-                    // Actualizar o crear marcador de usuario
+                    // Actualizar o crear marcador del usuario (círculo pequeño)
                     if (userMarker) {
                         userMarker.setLatLng(userLatLng);
                     } else {
@@ -406,11 +424,11 @@
                             fillOpacity: 0.8
                         }).addTo(map).bindPopup("Tu ubicación");
                         
-                        // Centrar mapa en usuario la primera vez
+                        // Centrar mapa la primera vez que obtenemos posición
                         map.setView(userLatLng, 15);
                     }
 
-                    // Actualizar círculo de precisión
+                    // Actualizar o crear círculo de precisión (basado en position.coords.accuracy)
                     if (userCircle) {
                         userCircle.setLatLng(userLatLng);
                         userCircle.setRadius(position.coords.accuracy);
@@ -425,17 +443,17 @@
                         }).addTo(map);
                     }
 
-                    // Lógica de proximidad
+                    //     LÓGICA DE PROXIMIDAD 
                     if (destinationLatLng && !hasBeenNotified) {
                         const distance = userLatLng.distanceTo(destinationLatLng);
                         
                         if (distance < PROXIMITY_THRESHOLD) {
                             hasBeenNotified = true;
                             
-                            // Toast
+                            // Mostrar toast
                             showToast();
                             
-                            // Notificación del sistema
+                            // Notificación del sistema (si está permitido)
                             if (Notification.permission === "granted") {
                                 new Notification("📍 ¡Destino alcanzado!", {
                                     body: "Has llegado a tu destino",
@@ -443,7 +461,7 @@
                                 });
                             }
                             
-                            // Cambiar color del marcador de destino
+                            // Cambiar el icono del destino a una bandera (🏁) para indicar llegada
                             if (destinationMarker) {
                                 destinationMarker.setIcon(L.divIcon({
                                     className: 'custom-destination-marker',
@@ -455,8 +473,9 @@
                         }
                     }
 
-                    updateUI();
+                    updateUI(); // Refrescar la interfaz con la nueva distancia
                 },
+                // Error: no se pudo obtener la posición
                 function(error) {
                     console.error("Error GPS:", error);
                     gpsStatus.textContent = 'GPS no disponible';
@@ -477,9 +496,9 @@
                     statusText.textContent = `⚠️ ${errorMsg}`;
                 },
                 {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 10000
+                    enableHighAccuracy: true,   // Usar GPS si está disponible
+                    maximumAge: 0,               // No usar posiciones cacheadas
+                    timeout: 10000                // Esperar máximo 10 segundos
                 }
             );
         } else {
@@ -487,14 +506,14 @@
             gpsStatus.textContent = 'No soportado';
         }
 
-        // Limpiar watchPosition al salir (buena práctica)
+        // Buena práctica: limpiar el watchPosition cuando se cierra la página
         window.addEventListener('beforeunload', () => {
             if (watchId) {
                 navigator.geolocation.clearWatch(watchId);
             }
         });
 
-        // Inicializar UI
+        // Inicializar UI (muestra el estado sin destino)
         updateUI();
     </script>
 </body>
